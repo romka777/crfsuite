@@ -55,6 +55,7 @@ typedef struct {
     int quiet;
     int reference;
     int help;
+    int bind_port;
 
     int num_params;
     char **params;
@@ -118,6 +119,9 @@ BEGIN_OPTION_MAP(parse_tagger_options, tagger_option_t)
     ON_OPTION(SHORTOPT('h') || LONGOPT("help"))
         opt->help = 1;
 
+    ON_OPTION_WITH_ARG(SHORTOPT('b') || LONGOPT("bind"))
+        opt->bind_port = atoi(arg);
+
     ON_OPTION_WITH_ARG(SHORTOPT('p') || LONGOPT("param"))
         opt->params = (char **)realloc(opt->params, sizeof(char*) * (opt->num_params + 1));
         opt->params[opt->num_params] = mystrdup(arg);
@@ -140,6 +144,7 @@ static void show_usage(FILE *fp, const char *argv0, const char *command)
     fprintf(fp, "    -i, --marginal      Output the marginal probabilities of items\n");
     fprintf(fp, "    -q, --quiet         Suppress tagging results (useful for test mode)\n");
     fprintf(fp, "    -h, --help          Show the usage of this command and exit\n");
+    fprintf(fp, "    -b, --bind=PORT     Listen on PORT for data instead of STDIN\n");
 }
 
 
@@ -237,6 +242,10 @@ static int tag(tagger_option_t* opt, crfsuite_model_t* model)
     crfsuite_tagger_t *tagger = NULL;
     crfsuite_dictionary_t *attrs = NULL, *labels = NULL;
     FILE *fp = NULL, *fpi = opt->fpi, *fpo = opt->fpo, *fpe = opt->fpe;
+    int s;
+    struct sockaddr_in sa;
+    int c;
+    int b = sizeof sa;
 
     /* Obtain the dictionary interface representing the labels in the model. */
     if (ret = model->get_labels(model, &labels)) {
@@ -258,6 +267,59 @@ static int tag(tagger_option_t* opt, crfsuite_model_t* model)
     crfsuite_instance_init(&inst);
     crfsuite_evaluation_init(&eval, L);
 
+#ifdef __unix__
+    if (opt->bind_port) {
+        s = socket(PF_INET, SOCK_STREAM, 0); 
+        if (s<0) {
+             fprintf(fpe, "ERROR: failed to create socket, errno = %d\n", errno);
+             ret = 1;
+             goto force_exit;
+        }
+        bzero(&sa, sizeof (sa));
+        sa.sin_family = AF_INET;
+        sa.sin_port = htons(opt->bind_port);
+        sa.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (bind(s, (struct sockaddr *)&sa, sizeof sa) < 0) {
+             fprintf(fpe, "ERROR: failed to bind socket, errno = %d\n", errno);
+             ret = 1;
+             goto force_exit;
+        }
+
+    listen(s, 4);
+    signal(SIGCHLD, SIG_IGN);
+    while (1) {
+        if ((c = accept(s, (struct sockaddr *)&sa, &b)) < 0) {
+                fprintf(fpe, "ERROR: failed to accept connection, errno = %d\n", errno);
+                ret = 1;
+                goto force_exit;
+        } else {
+            pid_t pid;
+
+            pid = fork();
+            if (pid>0) { // in parent
+                close(c);
+                continue;
+            } else if (pid==-1) { //error
+                fprintf(fpe, "ERROR: failed to fork, errno = %d\n", errno);
+                close(c);
+            } else { // in child
+                fclose(fpi);
+                fclose(fpo);
+                fpi = fdopen(c,"r");
+                fpo = fdopen(c,"w");
+                if (setvbuf(fpi, NULL, _IONBF, 0)) {
+                    fprintf(fpe, "ERROR: setvbuf failed, errno = %d\n", errno);
+                }
+                opt->fpi = fpi;
+                opt->fpo = fpo;
+                fp = fpi;
+                break; // exit while(1)
+            }
+        }
+    }
+    } else 
+#endif
+    {
     /* Open the stream for the input data. */
     fp = (strcmp(opt->input, "-") == 0) ? fpi : fopen(opt->input, "r");
     if (fp == NULL) {
@@ -265,6 +327,7 @@ static int tag(tagger_option_t* opt, crfsuite_model_t* model)
         fprintf(fpe, "  %s\n", opt->input);
         ret = 1;
         goto force_exit;
+    }
     }
 
     /* Open a IWA reader. */
@@ -341,6 +404,7 @@ static int tag(tagger_option_t* opt, crfsuite_model_t* model)
 
                 free(output);
                 crfsuite_instance_finish(&inst);
+                fflush(fpo);
             }
             break;
         }
