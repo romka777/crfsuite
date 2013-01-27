@@ -30,6 +30,7 @@
 
 /* $Id$ */
 
+#include "os.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -130,7 +131,20 @@ static int peek_char(iwa_t* iwa)
 {
     /* Refill the buffer if necessary. */
     if (iwa->end <= iwa->offset) {
-        size_t count = fread(iwa->buffer, sizeof(char), BUFFER_SIZE, iwa->fp);
+#ifdef __unix__
+        /* Read available bytes, no more then BUFFER_SIZE or 1 byte at least */
+        int bytes_av = 0;
+        int fd = fileno(iwa->fp);
+        if (fd >= 0) {
+             if (ioctl(fd, FIONREAD, &bytes_av)>=0) {
+                 bytes_av = (bytes_av > BUFFER_SIZE ? BUFFER_SIZE : bytes_av);
+             }
+        }
+        bytes_av = (bytes_av > 0 ? bytes_av : 1);
+#else
+#define bytes_av BUFFER_SIZE
+#endif
+        size_t count = fread(iwa->buffer, sizeof(char), bytes_av, iwa->fp);
         iwa->offset = iwa->buffer;
         iwa->end = iwa->buffer + count;
         if (count == 0) {

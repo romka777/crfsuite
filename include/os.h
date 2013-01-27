@@ -58,4 +58,20 @@
 
 #endif/*_MSC_VER*/
 
+#ifdef __unix__
+
+#define _POSIX_SOURCE
+#define _BSD_SOURCE
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <sys/ioctl.h>
+#include <netinet/in.h>
+#include <unistd.h>
+#include <errno.h>
+#include <strings.h>
+#include <stdio.h>
+#include <signal.h>
+
+#endif/*POSIX*/
+
 #endif/*__OS_H__*/
