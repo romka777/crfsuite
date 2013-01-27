@@ -132,16 +132,15 @@ static int peek_char(iwa_t* iwa)
     /* Refill the buffer if necessary. */
     if (iwa->end <= iwa->offset) {
 #ifdef __unix__
+        /* Read available bytes, no more then BUFFER_SIZE or 1 byte at least */
         int bytes_av = 0;
-        struct stat file_stat;
         int fd = fileno(iwa->fp);
         if (fd >= 0) {
-             fstat(fd, &file_stat);
              if (ioctl(fd, FIONREAD, &bytes_av)>=0) {
                  bytes_av = (bytes_av > BUFFER_SIZE ? BUFFER_SIZE : bytes_av);
              }
         }
-             bytes_av = (bytes_av > 0 ? bytes_av : 1);
+        bytes_av = (bytes_av > 0 ? bytes_av : 1);
 #else
 #define bytes_av BUFFER_SIZE
 #endif

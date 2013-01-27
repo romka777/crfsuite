@@ -55,6 +55,7 @@ typedef struct {
     int quiet;
     int reference;
     int help;
+    int daemon;
     int bind_port;
 
     int num_params;
@@ -119,6 +120,9 @@ BEGIN_OPTION_MAP(parse_tagger_options, tagger_option_t)
     ON_OPTION(SHORTOPT('h') || LONGOPT("help"))
         opt->help = 1;
 
+    ON_OPTION(SHORTOPT('d') || LONGOPT("daemon"))
+        opt->daemon = 1;
+
     ON_OPTION_WITH_ARG(SHORTOPT('b') || LONGOPT("bind"))
         opt->bind_port = atoi(arg);
 
@@ -145,6 +149,7 @@ static void show_usage(FILE *fp, const char *argv0, const char *command)
     fprintf(fp, "    -q, --quiet         Suppress tagging results (useful for test mode)\n");
     fprintf(fp, "    -h, --help          Show the usage of this command and exit\n");
     fprintf(fp, "    -b, --bind=PORT     Listen on PORT for data instead of STDIN\n");
+    fprintf(fp, "    -d, --daemon        Detatch from terminal and run as daemon\n");
 }
 
 
@@ -285,8 +290,13 @@ static int tag(tagger_option_t* opt, crfsuite_model_t* model)
              goto force_exit;
         }
 
-    listen(s, 4);
+    listen(s, 256);
     signal(SIGCHLD, SIG_IGN);
+    if (opt->daemon) {
+        if (daemon(0,0)==-1) {
+             fprintf(fpe, "ERROR: failed to run in background, errno = %d\n", errno);
+        }
+    }
     while (1) {
         if ((c = accept(s, (struct sockaddr *)&sa, &b)) < 0) {
                 fprintf(fpe, "ERROR: failed to accept connection, errno = %d\n", errno);
@@ -303,6 +313,7 @@ static int tag(tagger_option_t* opt, crfsuite_model_t* model)
                 fprintf(fpe, "ERROR: failed to fork, errno = %d\n", errno);
                 close(c);
             } else { // in child
+                close(s);
                 fclose(fpi);
                 fclose(fpo);
                 fpi = fdopen(c,"r");
