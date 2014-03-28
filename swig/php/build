@@ -2,7 +2,7 @@
 
 swig -php -c++ -I../../include -o export_wrap.cpp export.i
 g++ -I../../include `php-config --includes` -fPIC -c export_wrap.cpp
-gcc -shared *.o -o crfsuite.so
+gcc -shared ../../lib/cqdb/.libs/*.o ../../lib/crf/.libs/*.o ../../../liblbfgs/lib/.libs/*.o  ./*.o  -o crfsuite.so
 
 
 
