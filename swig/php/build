@@ -1,0 +1,9 @@
+#!/bin/sh
+
+swig -php -c++ -I../../include -o export_wrap.cpp export.i
+g++ -I../../include `php-config --includes` -fPIC -c export_wrap.cpp
+gcc -shared *.o -o crfsuite.so
+
+
+
+
